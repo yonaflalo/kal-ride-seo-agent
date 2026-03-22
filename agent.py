@@ -233,7 +233,7 @@ def agent_2_architect(strategy):
 
 def agent_3_writer(title, current_section, previous_ending):
     print(f"✍️ Agent 3: Deep drafting - {current_section}...")
-    sys = f"ROLE: Elite SEO Copywriter.\n{BRAND_CONTEXT}\nRULES:\n1. Write in HEBREW.\n2. Write approx 150 words.\n3. NO INTRO/CONCLUSION. NO HTML."
+    sys = f"ROLE: Elite SEO Copywriter.\n{BRAND_CONTEXT}\nRULES:\n1. Write in HEBREW.\n2. Write approx 250-300 words.\n3. NO INTRO/CONCLUSION. NO HTML."
     prompt = f"Article: {title}.\nPrevious text ends: '{previous_ending[-100:] if previous_ending else 'Start'}'.\nWrite: {current_section}."
     return call_ai(prompt, sys, expect_json=False)
 
