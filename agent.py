@@ -71,13 +71,17 @@ MEDIA_BANK = {
 
 BRAND_CONTEXT = """
 BRAND CONTEXT:
-- "Kal Ride" offers premium, extreme off-road driving experiences in Motza Valley (Jerusalem).
-- Vehicles: "Mia Four" - 100% electric, quiet, eco-friendly 4-wheelers.
-- Core USP: Extreme off-roading with zero hassle.
-RULES:
-1. TECH SPEC: Strictly 2x4.
-2. MESSAGING: Do NOT compare to owning a private Jeep.
-3. LOCALIZATION: Mention Motza Valley, Jerusalem mountains.
+- "Kal Ride" offers premium, quiet electric off-road experiences in Motza Valley, Jerusalem.
+- Vehicles: "Mia Four" (Electric, stable, high-end).
+- CAPACITY: We operate a boutique fleet of 5 vehicles. For larger groups, we provide custom solutions upon request (Don't limit the group size in text, let them ask!).
+- SCHEDULE: Open Sunday-Thursday full day, and Fridays/Holiday Eves until afternoon. Closed on Shabbat and Jewish Holidays.
+
+CONTENT STRATEGY RULES:
+1. LUXURY VIBE: Talk about "Boutique Experience" and "Private Tours".
+2. INCLUSIVITY: Focus on the EXPERIENCE, not the restrictions. 
+3. SHABBAT: Mention "Shabbat Observant" or "Kosher" as a quality mark, not a limitation. 
+4. GROUPS: Use phrases like "Perfect for intimate groups and team-building". If a group is larger than 5, encourage them to contact us for a custom solution.
+5. CALL TO ACTION: "Book your private slot" or "Check availability for your next adventure".
 """
 
 # ==========================================
@@ -210,12 +214,37 @@ def post_to_meta(caption, media_url):
 # 4. פס הייצור (Multi-Agent Pipeline)
 # ==========================================
 def agent_1_strategist():
-    print("🧠 Agent 1: Finding unwritten trends...")
-    past = supabase.table("articles").select("title_he").order("created_at", desc=True).limit(10).execute()
-    past_titles = [p['title_he'] for p in past.data] if past.data else []
-    sys = f"ROLE: Lead SEO Strategist. DATE: {datetime.now().strftime('%Y-%m-%d')}.\n{BRAND_CONTEXT}\nOUTPUT MUST BE HEBREW."
-    prompt = f"Research Jerusalem nature trends. AVOID these past topics: {past_titles}.\nJSON FORMAT: {{'topic':'...','angle':'...','category':'extreme|family_and_couples|nature_and_views','slug':'english-slug',}}"
-    return call_ai(prompt, sys, use_google=True)
+    print("🧠 Agent 1: Planning mid-week occupancy & Shabbat observant strategy...")
+    
+    # שליפת כותרות עבר
+    try:
+        past = supabase.table("articles").select("title_he").order("created_at", desc=True).limit(10).execute()
+        past_titles = [p['title_he'] for p in past.data] if past.data else []
+    except Exception as e:
+        print(f"⚠️ Could not fetch past titles: {e}")
+        past_titles = []
+
+    # הגדרת מבנה ה-JSON בצורה קשיחה
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "topic": {"type": "STRING"},
+            "angle": {"type": "STRING"},
+            "category": {"type": "STRING", "enum": ["extreme", "family_and_couples", "nature_and_views"]},
+            "slug": {"type": "STRING"}
+        },
+        "required": ["topic", "angle", "category", "slug"]
+    }
+
+    sys = f"ROLE: Lead SEO & Business Strategist. DATE: {datetime.now().strftime('%Y-%m-%d')}.\n{BRAND_CONTEXT}\nOUTPUT MUST BE HEBREW."
+    
+    prompt = f"""Research trends for mid-week attractions in Jerusalem. 
+    Focus on: 'Day trips for companies', 'Jerusalem mid-week dates', or 'Tourism for shabbat-observant travelers'.
+    AVOID these past topics: {past_titles}.
+    Respond with a JSON object containing: topic, angle, category, and slug."""
+    
+    # הוספנו כאן את ה-schema כדי למנוע את השגיאה שקיבלת
+    return call_ai(prompt, sys, schema=schema, use_google=True)
 
 def agent_2_architect(strategy):
     print("📐 Agent 2: Blueprinting 4 heavy sections...")
@@ -261,68 +290,125 @@ def translate_to(lang_code, title_he, content_he, tone):
     }
 
 def agent_6_social_and_media(title, strategy):
-    print("📱 Agent 6: Picking media & Crafting social post...")
-    past_media_res = supabase.table("articles").select("media_url").execute()
-    used_media = [m['media_url'] for m in past_media_res.data] if past_media_res.data else []
+    print("📱 Agent 6: Picking media & Crafting conversion-focused social post...")
+    
+    # שליפת מדיה שטרם נעשה בה שימוש
+    try:
+        past_media_res = supabase.table("articles").select("media_url").execute()
+        used_media = [m['media_url'] for m in past_media_res.data] if past_media_res.data else []
+    except:
+        used_media = []
     
     cat_key = strategy.get("category", "nature_and_views")
     available_media = [m for m in MEDIA_BANK.get(cat_key, MEDIA_BANK["nature_and_views"]) if m["url"] not in used_media]
-    if not available_media: available_media = MEDIA_BANK.get(cat_key, MEDIA_BANK["nature_and_views"])
+    
+    # פתרון לשגיאת selected: אם אין מדיה חדשה, בחר באקראי מהבנק
+    if not available_media: 
+        available_media = MEDIA_BANK.get(cat_key, MEDIA_BANK["nature_and_views"])
     
     selected = random.choice(available_media)
     
-    sys = f"ROLE: Viral Social Media Strategist.\n{BRAND_CONTEXT}\nTASK: Punchy HEBREW post with emojis."
+    sys = f"""ROLE: Viral Sales Copywriter.
+    {BRAND_CONTEXT}
+    TASK: Write a punchy HEBREW post with emojis.
+    KEY GOAL: Remind people that we are closed on Shabbat, so mid-week slots (Sun-Thu) are the priority. 
+    If the content is about groups, mention that 5 vehicles is the perfect size for a private group/team experience."""
+    
     schema = {"type": "OBJECT", "properties": {"social_post": {"type": "STRING"}}}
-    social = call_ai(f"Post for '{title}'.", sys, schema=schema)
+    social = call_ai(f"Post for '{title}'. Mid-week focus.", sys, schema=schema)
     
     return {"media_url": selected["url"], "social_post": social["social_post"]}
 
 # ==========================================
 # 5. ריצה מרכזית
 # ==========================================
+import sys
+
+def is_shabbat_now():
+    """בודק אם עכשיו זמן שבת (שישי מ-15:00 עד מוצאי שבת ב-19:00)"""
+    now = datetime.now()
+    weekday = now.weekday()  # 4 = Friday, 5 = Saturday, 6 = Sunday
+    hour = now.hour
+    
+    # שישי אחה"צ או שבת כל היום
+    if (weekday == 4 and hour >= 15) or (weekday == 5):
+        return True
+    # מוצאי שבת לפני 19:00
+    if weekday == 5 and hour < 19:
+        return True
+    return False
+
 if __name__ == "__main__":
     print("--- 🏭 KAL RIDE CONTENT FACTORY STARTED ---")
+    
+    # בדיקה האם להריץ רק סושיאל או מאמר מלא
+    social_only = "--social-only" in sys.argv
+    
     try:
+        # אג'נט 1 תמיד רץ כי הוא קובע את האסטרטגיה והנושא
         strat = agent_1_strategist()
-        outline = agent_2_architect(strat)
         
-        raw_body = ""
-        for s in outline["sections"]:
-            section_text = agent_3_writer(outline["title_raw"], s, raw_body)
-            raw_body += f"<h2>{s}</h2>\n<p>{section_text}</p>\n\n"
+        if social_only:
+            print("📱 MODE: SOCIAL MEDIA ONLY (Fast Track)")
+            # במצב סושיאל - אנחנו מדלגים על כתיבת המאמר והתרגומים
+            social_data = agent_6_social_and_media(strat['topic'], strat)
             
-        finisher = agent_4_finisher(outline["title_raw"], strat)
-        full_he = f"<p>{finisher['intro_he']}</p>\n\n{raw_body}\n\n<h2>מוכנים להרפתקה?</h2>\n<p>{finisher['outro_he']}</p>"
-        
-        en_data = translate_to("English", finisher["highlighted_title_he"], full_he, "Luxury Tourist")
-        fr_data = translate_to("French", finisher["highlighted_title_he"], full_he, "Elegant")
-        
-        social_data = agent_6_social_and_media(finisher["highlighted_title_he"], strat)
-        
-        record = {
-            "slug": strat["slug"],
-            "category": strat.get("category", "nature_and_views"),
-            "trending_context": strat["topic"],
-            "media_url": social_data["media_url"],
-            "title_he": finisher["highlighted_title_he"],
-            "content_he": full_he, 
-            "title_en": en_data["title"],
-            "content_en": en_data["content"],
-            "title_fr": fr_data["title"],
-            "content_fr": fr_data["content"],
-            "meta_description_he": finisher.get("meta_description", ""),
-            "social_caption_insta": social_data["social_post"],
-            "status": "published",
-            "language_code": "he",
-            "title": finisher["highlighted_title_he"],
-            "content": full_he
-        }
-        
-        supabase.table("articles").insert(record).execute()
-        print(f"\n🔥 WEB UPDATE: '{record['slug']}' IS LIVE.")
-        
-        post_link = f"\n\nהכתבה המלאה באתר:\nhttps://kalride.co.il/articles/{record['slug']}"
-        post_to_meta(f"{social_data['social_post']}{post_link}", social_data["media_url"])
-        
+            if not is_shabbat_now():
+                print(f"🚀 Posting social update about: {strat['topic']}")
+                post_to_meta(social_data["social_post"], social_data["media_url"])
+                print("✅ Social-only run completed successfully.")
+            else:
+                print("🕍 Shabbat detected. Content generated but NOT posted to Meta.")
+                
+        else:
+            print("📝 MODE: FULL CONTENT (Article + Social)")
+            # תהליך מלא: ארכיטקט -> כותב -> פינישר
+            outline = agent_2_architect(strat)
+            
+            raw_body = ""
+            for s in outline["sections"]:
+                section_text = agent_3_writer(outline["title_raw"], s, raw_body)
+                raw_body += f"<h2>{s}</h2>\n<p>{section_text}</p>\n\n"
+                
+            finisher = agent_4_finisher(outline["title_raw"], strat)
+            full_he = f"<p>{finisher['intro_he']}</p>\n\n{raw_body}\n\n<h2>מוכנים להרפתקה?</h2>\n<p>{finisher['outro_he']}</p>"
+            
+            # תרגומים
+            en_data = translate_to("English", finisher["highlighted_title_he"], full_he, "Luxury Tourist")
+            fr_data = translate_to("French", finisher["highlighted_title_he"], full_he, "Elegant")
+            
+            # יצירת פוסט סושיאל (מבוסס על המאמר)
+            social_data = agent_6_social_and_media(finisher["highlighted_title_he"], strat)
+            
+            # שמירה ל-Supabase
+            record = {
+                "slug": strat["slug"],
+                "category": strat.get("category", "nature_and_views"),
+                "trending_context": strat["topic"],
+                "media_url": social_data["media_url"],
+                "title_he": finisher["highlighted_title_he"],
+                "content_he": full_he, 
+                "title_en": en_data["title"],
+                "content_en": en_data["content"],
+                "title_fr": fr_data["title"],
+                "content_fr": fr_data["content"],
+                "meta_description_he": finisher.get("meta_description", ""),
+                "social_caption_insta": social_data["social_post"],
+                "status": "published",
+                "language_code": "he",
+                "title": finisher["highlighted_title_he"],
+                "content": full_he
+            }
+            
+            supabase.table("articles").insert(record).execute()
+            print(f"\n🔥 WEB UPDATE: '{record['slug']}' IS LIVE.")
+            
+            # פרסום למטא (רק אם לא שבת)
+            if not is_shabbat_now():
+                post_link = f"\n\nהכתבה המלאה באתר:\nhttps://kalride.co.il/articles/{record['slug']}"
+                post_to_meta(f"{social_data['social_post']}{post_link}", social_data["media_url"])
+            else:
+                print("🕍 Shabbat detected. Article saved to DB but NOT posted to social.")
+
     except Exception as e:
         print(f"\n❌ Pipeline Crash: {e}")

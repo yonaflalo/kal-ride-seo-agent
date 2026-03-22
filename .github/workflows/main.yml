@@ -1,13 +1,17 @@
-name: Kal Ride Agent Runner
+name: Kal Ride Strategy Runner
 
 on:
   schedule:
-    # רץ בימי שלישי (2) וחמישי (4) בשעה 07:00 UTC (שזה 09:00 או 10:00 בישראל)
-    - cron: '0 7 * * 2,4'
-  workflow_dispatch: # משאיר את הכפתור להרצה ידנית לכל מקרהכפתור להרצה ידנית
+    # ימי ראשון וחמישי - ריצה מלאה (מאמר + פוסט) ב-07:00 UTC (09:00/10:00 ישראל)
+    - cron: '0 7 * * 0,4'
+    
+    # ימי שלישי ושישי - רק פוסטים לרשתות (בשעה 08:00 ישראל לערך)
+    - cron: '0 6 * * 2,5'
+  
+  workflow_dispatch: # מאפשר הרצה ידנית בלחיצת כפתור
 
 jobs:
-  build:
+  run-agent:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -21,7 +25,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Agent
+      # הרצה מלאה: ימי ראשון וחמישי
+      - name: Run Full Content Strategy (Sun, Thu)
+        if: github.event.schedule == '0 7 * * 0,4' || github.event_name == 'workflow_dispatch'
+        run: python agent.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -29,4 +36,15 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
-        run: python agent.py
+
+      # הרצה של פוסט בלבד: ימי שלישי ושישי
+      - name: Run Social Only Strategy (Tue, Fri)
+        if: github.event.schedule == '0 6 * * 2,5'
+        run: python agent.py --social-only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
