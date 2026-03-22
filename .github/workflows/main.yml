@@ -1,0 +1,33 @@
+name: Kal Ride Agent Runner
+
+on:
+  schedule:
+    # רץ בימי שלישי (2) וחמישי (4) בשעה 07:00 UTC (שזה 09:00 או 10:00 בישראל)
+    - cron: '0 7 * * 2,4'
+  workflow_dispatch: # משאיר את הכפתור להרצה ידנית לכל מקרהכפתור להרצה ידנית
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Agent
+        env:
+          # כאן אנחנו מחברים את הסודות שהכנסת בשלב הקודם
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_BUSINESS_ID: ${{ secrets.IG_BUSINESS_ID }}
+          # תוסיף כאן עוד שמות אם יש לך סודות נוספים ב-GitHub
+        run: python agent.py
