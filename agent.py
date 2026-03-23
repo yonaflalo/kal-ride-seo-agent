@@ -7,27 +7,32 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from google import genai
-from google.genai import types
 
-# טעינת משתני סביבה
-load_dotenv()
-load_dotenv(override=True) # הוספנו override כדי להכריח אותו לקרוא
-print("👉 DEBUG: SUPABASE_URL is:", os.environ.get("SUPABASE_URL"))
 # ==========================================
-# 1. הגדרות וחיבורים
+# 1. אתחול, הגדרות ובסיס נתונים
 # ==========================================
+load_dotenv(override=True)
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
 FACEBOOK_PAGE_ID = os.environ.get("FACEBOOK_PAGE_ID")
 INSTAGRAM_BUSINESS_ID = os.environ.get("INSTAGRAM_BUSINESS_ID")
-META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# שימוש במודל יציב וזמין ציבורית
-GEMINI_MODEL = "gemini-2.5-flash"
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# ==========================================
+# 2. קונטקסט ובנק המדיה המלא
+# ==========================================
+BRAND_CONTEXT = """
+BRAND CONTEXT:
+- "Kal Ride" offers premium, quiet electric off-road experiences in Motza Valley, Jerusalem.
+- Vehicles: "Mia Four" (Electric, stable, high-end).
+- CAPACITY: Boutique fleet of 5 vehicles. For larger groups, custom solutions.
+- SCHEDULE: Sun-Thu full day, Friday until afternoon. Closed on Shabbat/Holidays.
+- STRATEGY: High-end luxury, boutique feel, focus on nature and off-road stability.
+"""
 
 MEDIA_BANK = {
     "extreme": [
@@ -69,346 +74,345 @@ MEDIA_BANK = {
     ]
 }
 
-BRAND_CONTEXT = """
-BRAND CONTEXT:
-- "Kal Ride" offers premium, quiet electric off-road experiences in Motza Valley, Jerusalem.
-- Vehicles: "Mia Four" (Electric, stable, high-end).
-- CAPACITY: We operate a boutique fleet of 5 vehicles. For larger groups, we provide custom solutions upon request (Don't limit the group size in text, let them ask!).
-- SCHEDULE: Open Sunday-Thursday full day, and Fridays/Holiday Eves until afternoon. Closed on Shabbat and Jewish Holidays.
-
-CONTENT STRATEGY RULES:
-1. LUXURY VIBE: Talk about "Boutique Experience" and "Private Tours".
-2. INCLUSIVITY: Focus on the EXPERIENCE, not the restrictions. 
-3. SHABBAT: Mention "Shabbat Observant" or "Kosher" as a quality mark, not a limitation. 
-4. GROUPS: Use phrases like "Perfect for intimate groups and team-building". If a group is larger than 5, encourage them to contact us for a custom solution.
-5. CALL TO ACTION: "Book your private slot" or "Check availability for your next adventure".
-"""
-
 # ==========================================
-# 2. עזרי AI ו-JSON
+# 3. פונקציות תשתית ולמידה
 # ==========================================
-def extract_json(text):
-    start, end = text.find('{'), text.rfind('}')
-    if start != -1 and end != -1:
-        return text[start:end+1]
-    return text
 
-def call_ai(prompt, system_prompt, schema=None, use_google=False, expect_json=True, max_tokens=8192):
-    for attempt in range(3):
-        try:
-            config_args = {
-                "system_instruction": system_prompt,
-                "max_output_tokens": max_tokens
-            }
-            
-            if use_google:
-                config_args["tools"] = [{"google_search": {}}]
-                # כשיש Google Search אי אפשר להשתמש ב-Response MIME Type של JSON, אז נוודא את זה בטקסט
-                if expect_json: 
-                    prompt += "\n\nCRITICAL: Respond ONLY with a valid JSON object."
-            else:
-                if expect_json:
-                    config_args["response_mime_type"] = "application/json"
-                    if schema: config_args["response_schema"] = schema
-
-            res = client.models.generate_content(
-                model=GEMINI_MODEL, 
-                contents=prompt, 
-                config=types.GenerateContentConfig(**config_args)
-            )
-            
-            if not expect_json:
-                return res.text.strip()
-            
-            cleaned = re.sub(r'[\x00-\x1F]+', ' ', extract_json(res.text))
-            return json.loads(cleaned, strict=False)
-            
-        except Exception as e:
-            print(f"⚠️ AI Attempt {attempt+1} failed: {e}")
-            if attempt == 2: raise e
-            time.sleep(3)
-
-# ==========================================
-# 3. פונקציות הפרסום למטא (פייסבוק ואינסטגרם)
-# ==========================================
-def post_to_meta(caption, media_url):
-    if not META_ACCESS_TOKEN:
-        print("❌ Error: META_ACCESS_TOKEN is missing in .env")
-        return
-
-    is_video = media_url.lower().endswith('.mp4')
-    print(f"🚀 Starting Meta Posting (Media Type: {'Video' if is_video else 'Image'})...")
-
-    try:
-        # --- פתרון הקסם: המרה אוטומטית מטוקן משתמש לטוקן עמוד ---
-        print("🔍 Fetching Facebook Page Token automatically...")
-        page_token = META_ACCESS_TOKEN
-        accounts_res = requests.get(f"https://graph.facebook.com/v19.0/me/accounts?access_token={META_ACCESS_TOKEN}").json()
-        if "data" in accounts_res:
-            for page in accounts_res["data"]:
-                if page["id"] == str(FACEBOOK_PAGE_ID):
-                    page_token = page["access_token"]
-                    break
-
-        # 1. פייסבוק
-        fb_endpoint = f"https://graph.facebook.com/v19.0/{FACEBOOK_PAGE_ID}/{'videos' if is_video else 'photos'}"
-        fb_payload = {
-            'access_token': page_token, # משתמשים בטוקן העמוד שחילצנו הרגע!
-            'description' if is_video else 'message': caption,
-            'file_url' if is_video else 'url': media_url
-        }
-        fb_res = requests.post(fb_endpoint, data=fb_payload).json()
-        if "id" in fb_res:
-            print(f"✅ Facebook: Success (ID: {fb_res['id']})")
-        else:
-            print(f"❌ Facebook: Error - {fb_res.get('error', {}).get('message', fb_res)}")
-
-        # 2. אינסטגרם - יצירת Media Container (משתמשים בטוקן הרגיל)
-        print("📸 Instagram: Creating media container...")
-        ig_container_url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_BUSINESS_ID}/media"
-        ig_payload = {
-            'access_token': META_ACCESS_TOKEN,
-            'caption': caption,
-            'media_type': 'REELS' if is_video else 'IMAGE'
-        }
-        if is_video: ig_payload['video_url'] = media_url
-        else: ig_payload['image_url'] = media_url
-
-        container_res = requests.post(ig_container_url, data=ig_payload).json()
-        
-        if "id" not in container_res:
-            print(f"❌ Instagram: Container Error - {container_res.get('error', {}).get('message', container_res)}")
-            return
-
-        creation_id = container_res["id"]
-        print(f"⏳ Instagram: Processing media ({creation_id})...")
-
-        # 3. אינסטגרם - בדיקת סטטוס ופרסום סופי
-        for attempt in range(12):
-            time.sleep(20)
-            status_res = requests.get(f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={META_ACCESS_TOKEN}").json()
-            status = status_res.get("status_code")
-            print(f"   Check ({attempt+1}/12): {status}")
-            
-            if status == "FINISHED":
-                publish_res = requests.post(f"https://graph.facebook.com/v19.0/{INSTAGRAM_BUSINESS_ID}/media_publish", data={
-                    'creation_id': creation_id,
-                    'access_token': META_ACCESS_TOKEN
-                }).json()
-                
-                if "id" in publish_res:
-                    print(f"✅ Instagram: Success (ID: {publish_res['id']})")
-                    return
-                else:
-                    print(f"❌ Instagram: Publish Error - {publish_res}")
-                    return
-            elif status == "ERROR":
-                print(f"❌ Instagram: Processing Failed - {status_res}")
-                return
-        
-        print("⚠️ Instagram: Processing timed out.")
-
-    except Exception as e:
-        print(f"❌ Fatal Meta API Error: {e}")
-# ==========================================
-# 4. פס הייצור (Multi-Agent Pipeline)
-# ==========================================
-def agent_1_strategist():
-    print("🧠 Agent 1: Planning mid-week occupancy & Shabbat observant strategy...")
-    
-    # שליפת כותרות עבר
-    try:
-        past = supabase.table("articles").select("title_he").order("created_at", desc=True).limit(10).execute()
-        past_titles = [p['title_he'] for p in past.data] if past.data else []
-    except Exception as e:
-        print(f"⚠️ Could not fetch past titles: {e}")
-        past_titles = []
-
-    # הגדרת מבנה ה-JSON בצורה קשיחה
-    schema = {
-        "type": "OBJECT",
-        "properties": {
-            "topic": {"type": "STRING"},
-            "angle": {"type": "STRING"},
-            "category": {"type": "STRING", "enum": ["extreme", "family_and_couples", "nature_and_views"]},
-            "slug": {"type": "STRING"}
-        },
-        "required": ["topic", "angle", "category", "slug"]
-    }
-
-    sys = f"ROLE: Lead SEO & Business Strategist. DATE: {datetime.now().strftime('%Y-%m-%d')}.\n{BRAND_CONTEXT}\nOUTPUT MUST BE HEBREW."
-    
-    prompt = f"""Research trends for mid-week attractions in Jerusalem. 
-    Focus on: 'Day trips for companies', 'Jerusalem mid-week dates', or 'Tourism for shabbat-observant travelers'.
-    AVOID these past topics: {past_titles}.
-    Respond with a JSON object containing: topic, angle, category, and slug."""
-    
-    # הוספנו כאן את ה-schema כדי למנוע את השגיאה שקיבלת
-    return call_ai(prompt, sys, schema=schema, use_google=True)
-
-def agent_2_architect(strategy):
-    print("📐 Agent 2: Blueprinting 4 heavy sections...")
-    sys = "ROLE: Content Architect. ALL TEXT IN HEBREW."
-    schema = {
-        "type": "OBJECT", 
-        "properties": {
-            "title_raw": {"type": "STRING"}, 
-            "sections": {"type": "ARRAY", "items": {"type": "STRING"}}
-           
-        }
-    }
-    prompt = f"Topic: {strategy['topic']}. Angle: {strategy['angle']}. Create a raw title and exactly 4 section titles. BODY ONLY."
-    return call_ai(prompt, sys, schema=schema)
-
-def agent_3_writer(title, current_section, previous_ending):
-    print(f"✍️ Agent 3: Deep drafting - {current_section}...")
-    sys = f"ROLE: Elite SEO Copywriter.\n{BRAND_CONTEXT}\nRULES:\n1. Write in HEBREW.\n2. Write approx 250-300 words.\n3. NO INTRO/CONCLUSION. NO HTML."
-    prompt = f"Article: {title}.\nPrevious text ends: '{previous_ending[-100:] if previous_ending else 'Start'}'.\nWrite: {current_section}."
-    return call_ai(prompt, sys, expect_json=False)
-
-def agent_4_finisher(title_raw, strategy):
-    print("🎀 Agent 4: Writing Intro, Outro & Meta...")
-    sys = f"ROLE: Editor in Chief.\n{BRAND_CONTEXT}\nTASK: 1. Wrap 1-2 words in **asterisks**. 2. Write Intro and Outro."
-    schema = {
-        "type": "OBJECT", "properties": {
-            "highlighted_title_he": {"type": "STRING"},
-            "intro_he": {"type": "STRING"}, 
-            "outro_he": {"type": "STRING"}, 
-            "meta_description": {"type": "STRING"}
-        }
-    }
-    return call_ai(f"Title: {title_raw}. Topic: {strategy['topic']}.", sys, schema=schema)
-
-def translate_to(lang_code, title_he, content_he, tone):
-    print(f"🌍 Agent 5: Translating to {lang_code.upper()}...")
-    sys = f"ROLE: High-end Translator. Translate to {lang_code} ({tone}). First line is Title, blank line, then content."
-    text = call_ai(f"Title: {title_he}\n\n{content_he}", sys, expect_json=False)
-    parts = text.split('\n', 1)
-    return {
-        "title": parts[0].strip().replace("Title:", "").strip(), 
-        "content": parts[1].strip() if len(parts) > 1 else ""
-    }
-
-def agent_6_social_and_media(title, strategy):
-    print("📱 Agent 6: Picking media & Crafting conversion-focused social post...")
-    
-    # שליפת מדיה שטרם נעשה בה שימוש
-    try:
-        past_media_res = supabase.table("articles").select("media_url").execute()
-        used_media = [m['media_url'] for m in past_media_res.data] if past_media_res.data else []
-    except:
-        used_media = []
-    
-    cat_key = strategy.get("category", "nature_and_views")
-    available_media = [m for m in MEDIA_BANK.get(cat_key, MEDIA_BANK["nature_and_views"]) if m["url"] not in used_media]
-    
-    # פתרון לשגיאת selected: אם אין מדיה חדשה, בחר באקראי מהבנק
-    if not available_media: 
-        available_media = MEDIA_BANK.get(cat_key, MEDIA_BANK["nature_and_views"])
-    
-    selected = random.choice(available_media)
-    
-    sys = f"""ROLE: Viral Sales Copywriter.
-    {BRAND_CONTEXT}
-    TASK: Write a punchy HEBREW post with emojis.
-    KEY GOAL: Remind people that we are closed on Shabbat, so mid-week slots (Sun-Thu) are the priority. 
-    If the content is about groups, mention that 5 vehicles is the perfect size for a private group/team experience."""
-    
-    schema = {"type": "OBJECT", "properties": {"social_post": {"type": "STRING"}}}
-    social = call_ai(f"Post for '{title}'. Mid-week focus.", sys, schema=schema)
-    
-    return {"media_url": selected["url"], "social_post": social["social_post"]}
-
-# ==========================================
-# 5. ריצה מרכזית
-# ==========================================
-import sys
+def log_error(msg):
+    with open("errors.log", "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now()} | {msg}\n")
 
 def is_shabbat_now():
-    """בודק אם עכשיו זמן שבת (שישי מ-15:00 עד מוצאי שבת ב-19:00)"""
     now = datetime.now()
-    weekday = now.weekday()  # 4 = Friday, 5 = Saturday, 6 = Sunday
+    weekday = now.weekday()
     hour = now.hour
-    
-    # שישי אחה"צ או שבת כל היום
-    if (weekday == 4 and hour >= 15) or (weekday == 5):
-        return True
-    # מוצאי שבת לפני 19:00
-    if weekday == 5 and hour < 19:
-        return True
+    if (weekday == 4 and hour >= 15) or (weekday == 5 and hour < 19): return True
     return False
 
-if __name__ == "__main__":
-    print("--- 🏭 KAL RIDE CONTENT FACTORY STARTED ---")
-    
-    # בדיקה האם להריץ רק סושיאל או מאמר מלא
-    social_only = "--social-only" in sys.argv
-    
-    try:
-        # אג'נט 1 תמיד רץ כי הוא קובע את האסטרטגיה והנושא
-        strat = agent_1_strategist()
-        
-        if social_only:
-            print("📱 MODE: SOCIAL MEDIA ONLY (Fast Track)")
-            # במצב סושיאל - אנחנו מדלגים על כתיבת המאמר והתרגומים
-            social_data = agent_6_social_and_media(strat['topic'], strat)
-            
-            if not is_shabbat_now():
-                print(f"🚀 Posting social update about: {strat['topic']}")
-                post_to_meta(social_data["social_post"], social_data["media_url"])
-                print("✅ Social-only run completed successfully.")
-            else:
-                print("🕍 Shabbat detected. Content generated but NOT posted to Meta.")
-                
-        else:
-            print("📝 MODE: FULL CONTENT (Article + Social)")
-            # תהליך מלא: ארכיטקט -> כותב -> פינישר
-            outline = agent_2_architect(strat)
-            
-            raw_body = ""
-            for s in outline["sections"]:
-                section_text = agent_3_writer(outline["title_raw"], s, raw_body)
-                raw_body += f"<h2>{s}</h2>\n<p>{section_text}</p>\n\n"
-                
-            finisher = agent_4_finisher(outline["title_raw"], strat)
-            full_he = f"<p>{finisher['intro_he']}</p>\n\n{raw_body}\n\n<h2>מוכנים להרפתקה?</h2>\n<p>{finisher['outro_he']}</p>"
-            
-            # תרגומים
-            en_data = translate_to("English", finisher["highlighted_title_he"], full_he, "Luxury Tourist")
-            fr_data = translate_to("French", finisher["highlighted_title_he"], full_he, "Elegant")
-            
-            # יצירת פוסט סושיאל (מבוסס על המאמר)
-            social_data = agent_6_social_and_media(finisher["highlighted_title_he"], strat)
-            
-            # שמירה ל-Supabase
-            record = {
-                "slug": strat["slug"],
-                "category": strat.get("category", "nature_and_views"),
-                "trending_context": strat["topic"],
-                "media_url": social_data["media_url"],
-                "title_he": finisher["highlighted_title_he"],
-                "content_he": full_he, 
-                "title_en": en_data["title"],
-                "content_en": en_data["content"],
-                "title_fr": fr_data["title"],
-                "content_fr": fr_data["content"],
-                "meta_description_he": finisher.get("meta_description", ""),
-                "social_caption_insta": social_data["social_post"],
-                "status": "published",
-                "language_code": "he",
-                "title": finisher["highlighted_title_he"],
-                "content": full_he
-            }
-            
-            supabase.table("articles").insert(record).execute()
-            print(f"\n🔥 WEB UPDATE: '{record['slug']}' IS LIVE.")
-            
-            # פרסום למטא (רק אם לא שבת)
-            if not is_shabbat_now():
-                post_link = f"\n\nהכתבה המלאה באתר:\nhttps://kalride.co.il/articles/{record['slug']}"
-                post_to_meta(f"{social_data['social_post']}{post_link}", social_data["media_url"])
-            else:
-                print("🕍 Shabbat detected. Article saved to DB but NOT posted to social.")
+def extract_json(text):
+    start, end = text.find('{'), text.rfind('}')
+    return text[start:end+1] if (start != -1 and end != -1) else text
 
+def fetch_meta_insights():
+    """ הפונקציה החדשה שקוראת נתונים ממטא כדי ללמוד מהשטח """
+    if not META_ACCESS_TOKEN or not FACEBOOK_PAGE_ID:
+        return "No Meta Token available to fetch insights."
+    
+    # שולף את 3 הפוסטים האחרונים כולל כמות לייקים ותגובות
+    url = f"https://graph.facebook.com/v18.0/{FACEBOOK_PAGE_ID}/posts?fields=id,message,created_time,comments.summary(total_count),likes.summary(total_count)&limit=3&access_token={META_ACCESS_TOKEN}"
+    try:
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
+        posts = res.json().get('data', [])
+        
+        insights = []
+        for p in posts:
+            likes = p.get('likes', {}).get('summary', {}).get('total_count', 0)
+            comments = p.get('comments', {}).get('summary', {}).get('total_count', 0)
+            date = p.get('created_time', '')[:10]
+            msg = p.get('message', '')[:40].replace('\n', ' ')
+            insights.append(f"[{date}] Post: '{msg}...' | Likes: {likes} | Comments: {comments}")
+            
+        return "\n".join(insights) if insights else "No recent posts found on the page."
     except Exception as e:
-        print(f"\n❌ Pipeline Crash: {e}")
+        log_error(f"Failed to fetch Meta insights: {e}")
+        return "Failed to fetch recent performance."
+
+def call_ai(prompt, system_prompt, expect_json=True, max_retries=3):
+    model = "gemini-2.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096}
+    }
+
+    if expect_json:
+        payload["generationConfig"]["responseMimeType"] = "application/json"
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"🤖 AI Call (attempt {attempt})...")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if "candidates" not in data:
+                raise Exception(f"No candidates in response: {data}")
+
+            res_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+            if not expect_json: return res_text
+
+            def clean_json(text):
+                text = re.sub(r'[\x00-\x1F]+', ' ', text)
+                start, end = text.find('{'), text.rfind('}')
+                if start != -1 and end != -1: return text[start:end+1]
+                return text
+
+            cleaned = clean_json(res_text)
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                return json.loads(cleaned.replace("'", '"'))
+
+        except requests.exceptions.Timeout:
+            log_error(f"⏱️ Timeout on attempt {attempt}")
+        except requests.exceptions.HTTPError as e:
+            err_msg = f"❌ HTTP Error: {e}. Response: {response.text}"
+            log_error(err_msg)
+            if response.status_code in [401, 403, 404]:
+                raise Exception("🚨 Fatal API Error – check API key / model")
+        except Exception as e:
+            log_error(f"❌ General Error on attempt {attempt}: {e}")
+        time.sleep(2)
+
+    raise Exception("🚨 AI FAILED after retries")
+
+def post_to_meta(caption, media_url):
+    if not META_ACCESS_TOKEN: 
+        print("⚠️ Meta Token missing. Cannot publish.")
+        return
+    
+    is_video = media_url.lower().endswith('.mp4')
+    print(f"🔗 Publishing Media URL: {media_url}")
+    
+    # --- Facebook Publishing ---
+    if FACEBOOK_PAGE_ID:
+        print(f"🚀 Publishing to Facebook (Video: {is_video})...")
+        if is_video:
+            fb_url = f"https://graph.facebook.com/v18.0/{FACEBOOK_PAGE_ID}/videos"
+            fb_payload = {"file_url": media_url, "description": caption, "access_token": META_ACCESS_TOKEN}
+        else:
+            fb_url = f"https://graph.facebook.com/v18.0/{FACEBOOK_PAGE_ID}/photos"
+            fb_payload = {"url": media_url, "message": caption, "access_token": META_ACCESS_TOKEN}
+        
+        try:
+            fb_res = requests.post(fb_url, data=fb_payload)
+            fb_res.raise_for_status()
+            print("✅ Published to Facebook!")
+        except requests.exceptions.HTTPError as err:
+            print(f"❌ Facebook Publish Failed: {fb_res.text}")
+
+    # --- Instagram Publishing ---
+    if INSTAGRAM_BUSINESS_ID:
+        print(f"🚀 Publishing to Instagram (Video: {is_video})...")
+        ig_media_url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_BUSINESS_ID}/media"
+        ig_payload = {"caption": caption, "access_token": META_ACCESS_TOKEN}
+        
+        if is_video:
+            ig_payload["media_type"] = "REELS"
+            ig_payload["video_url"] = media_url
+        else:
+            ig_payload["image_url"] = media_url
+            
+        try:
+            creation_res = requests.post(ig_media_url, data=ig_payload)
+            creation_res.raise_for_status()
+            container_id = creation_res.json().get("id")
+            
+            print("⏳ Waiting 10s for Instagram media processing...")
+            time.sleep(10)
+            
+            ig_publish_url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_BUSINESS_ID}/media_publish"
+            publish_payload = {"creation_id": container_id, "access_token": META_ACCESS_TOKEN}
+            publish_res = requests.post(ig_publish_url, data=publish_payload)
+            publish_res.raise_for_status()
+            print("✅ Published to Instagram!")
+        except requests.exceptions.HTTPError as err:
+            print(f"❌ Instagram Publish Failed")
+            if 'creation_res' in locals(): print(creation_res.text)
+
+# ==========================================
+# 4. הסוכנים האוטונומיים
+# ==========================================
+
+def get_macro_learning():
+    try:
+        res = supabase.table("agent_learning").select("trend_concept").order("created_at", desc=True).limit(1).execute()
+        if res.data:
+            return res.data[0]['trend_concept']
+    except Exception as e:
+        log_error(f"Macro Learning fetch failed: {e}")
+    return "No previous data"
+
+def agent_0_challenger(last_trend, meta_insights):
+    print("🧠 Agent 0 (CMO): Analyzing Real-Time Meta Data & Strategy...")
+    sys = f"ROLE: Aggressive CMO & Data Analyst. {BRAND_CONTEXT}. KPI: Maximum Conversions without Spamming."
+    
+    # הפרומפט החדש שעושה את הקסם ומנתח את פייסבוק
+    prompt = f"""You are the CMO of Kal Ride.
+    RECENT FACEBOOK POSTS PERFORMANCE:
+    {meta_insights}
+    
+    LAST GENERATED TREND: '{last_trend}'
+    
+    YOUR TASK:
+    Analyze the recent performance. If a post was made today or is gaining heavy traction, YOU MUST select 'wait' to avoid spamming the audience.
+    If it's time for new content, invent a completely NEW marketing trend, or 'repurpose' an older winning idea.
+    'article_only' or 'both' should be used RARELY (only for deep-dive SEO).
+    
+    The values for 'trend_concept' and 'logic' MUST be in Hebrew.
+    Output JSON: {{
+        "trend_concept": "...", 
+        "logic": "Explain why you chose to wait, repurpose, or create new based on the data...", 
+        "action_type": "wait" OR "repurpose" OR "post_only" OR "article_only" OR "both",
+        "category": "extreme/family_and_couples/nature_and_views/pov/technical"
+    }}"""
+    try:
+        return call_ai(prompt, sys, expect_json=True)
+    except Exception as e:
+        print(f"🚨 Agent 0 FAILED: {e}")
+        return None
+
+def agent_1_strategist(trend):
+    print(f"🎯 Agent 1 (Strategist): Planning for trend '{trend.get('trend_concept', '')}'")
+    sys = f"Lead SEO Strategist. {BRAND_CONTEXT}"
+    prompt = f"Trend: {trend}. Create topic and angle EXCLUSIVELY IN HEBREW. Create slug in English. Output JSON: {{topic: 'נושא בעברית', angle: 'זווית בעברית', slug: 'english-slug'}}"
+    try: return call_ai(prompt, sys, expect_json=True)
+    except Exception: return None
+
+def agent_2_architect(strategy):
+    print("📐 Agent 2 (Architect): Designing article structure...")
+    sys = f"Content Architect. {BRAND_CONTEXT}"
+    prompt = f"Topic: {strategy.get('topic')}. Create exactly 4 section titles IN HEBREW ONLY. Output JSON: {{sections: ['כותרת 1', 'כותרת 2', 'כותרת 3', 'כותרת 4']}}"
+    try: return call_ai(prompt, sys, expect_json=True)
+    except Exception: return None
+
+def agent_3_writer(title, section, prev_text):
+    print(f"✍️ Agent 3 (Writer): Writing section '{section}'")
+    sys = f"Elite SEO Writer. {BRAND_CONTEXT}. CRITICAL: Write EXCLUSIVELY IN HEBREW."
+    prompt = f"Article Topic: {title}. Section: {section}. Write 150 words based on the context in pure, natural Hebrew."
+    try: return call_ai(prompt, sys, expect_json=False)
+    except Exception: return None
+
+def agent_4_finisher(title, body):
+    print("🎀 Agent 4 (Finisher): Writing Intro & Outro...")
+    sys = f"Editor in Chief. {BRAND_CONTEXT}. CRITICAL: WRITE IN HEBREW ONLY."
+    prompt = f"Article Title: {title}. Write an engaging intro and a strong CTA outro EXCLUSIVELY IN HEBREW. Output JSON: {{intro: 'פתיח...', outro: 'סיום...'}}"
+    try: return call_ai(prompt, sys, expect_json=True)
+    except Exception: return None
+
+def agent_5_translator(text, target_lang):
+    print(f"🌍 Agent 5 (Translator): Translating to {target_lang}...")
+    sys = "Expert high-end translator. Keep the luxury tone intact."
+    prompt = f"Translate the following text to {target_lang}:\n\n{text}"
+    try: return call_ai(prompt, sys, expect_json=False)
+    except Exception: return None
+
+def agent_6_social(topic, trend):
+    print("📸 Agent 6 (Social): Creating viral post...")
+    sys = f"Viral Social Media Manager. {BRAND_CONTEXT}"
+    prompt = f"Topic/Trend: {topic}. Write a short, exciting Instagram/Facebook caption EXCLUSIVELY IN HEBREW with emojis. Output JSON: {{social_post: 'טקסט הפוסט...'}}"
+    try: return call_ai(prompt, sys, expect_json=True)
+    except Exception: return None
+
+def agent_7_proofreader(text, lang):
+    print(f"🔍 Agent 7 (Proofreader): Polishing {lang} text...")
+    sys = f"ROLE: Expert Proofreader in {lang}. FIX ALL SPELLING/GRAMMAR. Return ONLY corrected text."
+    try: return call_ai(f"Fix this text: {text}", sys, expect_json=False)
+    except Exception: return text
+
+# ==========================================
+# 5. הניתוב האסטרטגי
+# ==========================================
+
+def run_full_cycle():
+    print("--- 🏭 KAL RIDE AUTONOMOUS MARKETING STARTED ---")
+    
+    # למידת מקרו (היסטוריה) ולמידת מיקרו (זמן אמת מפייסבוק)
+    last_trend = get_macro_learning()
+    meta_insights = fetch_meta_insights()
+    
+    trend = agent_0_challenger(last_trend, meta_insights)
+    if not trend:
+        print("🚨 STOP: Agent 0 failed. Stopping pipeline.")
+        return
+
+    action_type = trend.get('action_type', 'wait')
+    print(f"🤖 CMO Logic: {trend.get('logic', 'No logic provided')}")
+    print(f"🤖 CMO Decision: We will execute -> {action_type.upper()}")
+    
+    # אם ה-CMO החליט להמתין כדי לא להספים
+    if action_type == 'wait':
+        print("⏸️ CMO decided to wait and let current content grow. Exiting cycle gracefully.")
+        try:
+            supabase.table("agent_learning").insert({
+                "trend_concept": "WAIT & OBSERVE",
+                "insight": trend.get('logic', 'Avoiding spam.'),
+                "action_taken": "Action: WAIT. No post generated.",
+                "created_at": datetime.now().isoformat()
+            }).execute()
+        except Exception as e: pass
+        return
+
+    topic_hebrew = trend.get('trend_concept', 'חוויית שטח במוצא')
+
+    # מסלול מאמר כולל תרגומים
+    if action_type in ['article_only', 'both']:
+        strat = agent_1_strategist(trend)
+        if strat:
+            topic_hebrew = strat.get('topic', topic_hebrew)
+            structure = agent_2_architect(strat)
+            if structure:
+                sections = structure.get('sections', ["מבוא", "החוויה", "הטבע", "סיכום"])
+                raw_body = ""
+                for sec in sections:
+                    section_content = agent_3_writer(topic_hebrew, sec, raw_body)
+                    if section_content: raw_body += f"<h2>{sec}</h2>\n" + section_content + "\n\n"
+                
+                finishing = agent_4_finisher(topic_hebrew, raw_body)
+                if finishing:
+                    full_hebrew_article = f"{finishing.get('intro', '')}\n\n{raw_body}\n\n{finishing.get('outro', '')}"
+                    clean_hebrew_article = agent_7_proofreader(full_hebrew_article, "Hebrew")
+                    
+                    raw_english = agent_5_translator(clean_hebrew_article, "English")
+                    if raw_english: 
+                        agent_7_proofreader(raw_english, "English")
+                        print("📝 English translation & proofreading complete.")
+                        
+                    raw_french = agent_5_translator(clean_hebrew_article, "French")
+                    if raw_french: 
+                        agent_7_proofreader(raw_french, "French")
+                        print("📝 French translation & proofreading complete.")
+                    print("✅ Article generation complete.")
+    elif action_type != 'wait':
+        print("⏭️ CMO selected to skip article generation.")
+
+    # מסלול סושיאל ופרסום
+    if action_type in ['post_only', 'both', 'repurpose']:
+        social_content = agent_6_social(topic_hebrew, trend)
+        if social_content:
+            clean_caption = agent_7_proofreader(social_content.get('social_post', 'יוצאים לשטח!'), "Hebrew")
+            cat = trend.get('category', 'nature_and_views')
+            media_options = MEDIA_BANK.get(cat, MEDIA_BANK['nature_and_views'])
+            
+            valid_media = [m for m in media_options if not m['url'].lower().endswith('.webp')]
+            if not valid_media:
+                selected_media = {"url": "https://jnkcqijbbotalymmyjay.supabase.co/storage/v1/object/public/pov/nature/summday_9665585533.jpg"}
+            else:
+                selected_media = random.choice(valid_media)
+            
+            if not is_shabbat_now():
+                post_to_meta(clean_caption, selected_media['url'])
+            else:
+                print("⏸️ Shabbat Mode: Publishing paused.")
+
+    # שמירה לדאשבורד
+    try:
+        supabase.table("agent_learning").insert({
+            "trend_concept": trend.get('trend_concept', 'Boutique Eco-Luxury'),
+            "insight": trend.get('logic', 'Strategy applied successfully'),
+            "action_taken": f"Action: {action_type}. Topic: {topic_hebrew}",
+            "created_at": datetime.now().isoformat()
+        }).execute()
+        print("💾 Pipeline execution saved to Supabase Memory.")
+    except Exception as e:
+        print(f"⚠️ Supabase Save Error: {e}")
+        log_error(f"Supabase Save Error: {e}")
+        
+    print("✅ CYCLE COMPLETE.")
+
+if __name__ == "__main__":
+    run_full_cycle()
