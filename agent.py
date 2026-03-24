@@ -302,9 +302,13 @@ def agent_5_translator(text, target_lang):
     except Exception: return None
 
 def agent_6_social(topic, trend):
-    print("📸 Agent 6 (Social): Creating viral post...")
+    print("📸 Agent 6 (Social): Creating viral post with website link...")
     sys = f"Viral Social Media Manager. {BRAND_CONTEXT}"
-    prompt = f"Topic/Trend: {topic}. Write a short, exciting Instagram/Facebook caption EXCLUSIVELY IN HEBREW with emojis. Output JSON: {{social_post: 'טקסט הפוסט...'}}"
+    # הוספת דרישה לקישור בסוף הפוסט
+    prompt = f"""Topic/Trend: {topic}. 
+    Write a short, exciting Instagram/Facebook caption in Hebrew with emojis.
+    CRITICAL: Always end the post with a call to action and this link: https://www.kalride.com
+    Output JSON: {{ "social_post": "טקסט הפוסט..." }}"""
     try: return call_ai(prompt, sys, expect_json=True)
     except Exception: return None
 

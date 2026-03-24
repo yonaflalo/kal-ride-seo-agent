@@ -2,19 +2,20 @@ name: Kal Ride AI CMO Cycle
 
 on:
   schedule:
-    # רץ כל 4 שעות (6 פעמים ביום)
+    # רץ כל 4 שעות בשעות עגולות (0, 4, 8, 12, 16, 20 שעון UTC)
+    # בישראל (קיץ) זה יוצא: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00
     - cron: '0 */4 * * *'
-  workflow_dispatch: # מאפשר לך להריץ ידנית בלחיצת כפתור ב-GitHub
+  workflow_dispatch: # מאפשר הרצה ידנית בלחיצת כפתור
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/set-up-python@v4
+        uses: actions/setup-python@v5 # התיקון הקריטי כאן! (setup-python)
         with:
           python-version: '3.10'
 
