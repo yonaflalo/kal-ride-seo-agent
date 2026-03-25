@@ -2,21 +2,14 @@ name: Kal Ride AI Automation
 
 on:
   schedule:
-    # מריץ את הסושיאל כל 4 שעות (זמן UTC)
     - cron: '0 */4 * * *'
-    # מריץ את ה-SEO פעם ביום ב-02:00 בלילה (זמן UTC)
     - cron: '0 2 * * *'
-  workflow_dispatch: # כפתור הרצה ידנית ב-GitHub
+  workflow_dispatch: 
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
     
-    # הגדרת תיקיית העבודה לכל הצעדים ב-Job
-    defaults:
-      run:
-        working-directory: "./seo agent/python_engine"
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -27,12 +20,14 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
+        # התיקון: שימוש בגרשיים בודדות מסביב לנתיב עם רווחים
+        working-directory: 'seo agent/python_engine'
         run: |
           python -m pip install --upgrade pip
           pip install requests supabase google-genai python-dotenv pytz
 
-      # 1. הרצת מנוע הסושיאל (מפורסם לפייסבוק ואינסטגרם)
       - name: Run Social Engine
+        working-directory: 'seo agent/python_engine'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -42,9 +37,9 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python factory_ai_agents.py
 
-      # 2. הרצת מנוע ה-SEO (רק ב-02:00 UTC או בהרצה ידנית)
       - name: Run SEO Engine
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
+        working-directory: 'seo agent/python_engine'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
