@@ -1,0 +1,10 @@
+{
+  "is_active": true,
+  "campaign_name": "ספיישל פסח והאביב",
+  "start_time": "2026-03-25T08:00:00",
+  "end_time": "2026-03-30T23:59:00",
+  "override_target": 25,
+  "focus": "Mets l'accent sur les vacances de Pâques et les balades en famille.",
+  "force_promo": true,
+  "discount_percent": 15
+}

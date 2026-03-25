@@ -1,35 +1,44 @@
-name: Kal Ride AI CMO Cycle
+name: Kal Ride AI Automation
 
 on:
   schedule:
-    # רץ כל 4 שעות בשעות עגולות (0, 4, 8, 12, 16, 20 שעון UTC)
-    # בישראל (קיץ) זה יוצא: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00
+    # מריץ את הסושיאל כל 4 שעות (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
     - cron: '0 */4 * * *'
-  workflow_dispatch: # מאפשר הרצה ידנית בלחיצת כפתור
+    # מריץ את ה-SEO פעם ביום ב-02:00 בלילה (UTC)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # מאפשר לך להריץ ידנית מה-GitHub בלחיצת כפתור
 
 jobs:
-  build:
+  run-automation:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # התיקון הקריטי כאן! (setup-python)
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests python-dotenv supabase
+          pip install requests supabase google-genai python-dotenv pytz
 
-      - name: Run AI Agent
+      # 1. הרצת מנוע הסושיאל (רץ בכל הפעלה של ה-Cron)
+      - name: Run Social Engine
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+        run: python factory_ai_agents.py
+
+      # 2. הרצת מנוע ה-SEO (רק ב-02:00 בלילה או בהרצה ידנית)
+      - name: Run SEO Engine
+        if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
+        env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python agent.py
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python seo_factory.py
