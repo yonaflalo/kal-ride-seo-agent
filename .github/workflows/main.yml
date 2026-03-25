@@ -2,39 +2,47 @@ name: Kal Ride AI Automation
 
 on:
   schedule:
-    # מריץ את הסושיאל כל 4 שעות (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+    # מריץ את הסושיאל כל 4 שעות (זמן UTC)
     - cron: '0 */4 * * *'
-    # מריץ את ה-SEO פעם ביום ב-02:00 בלילה (UTC)
+    # מריץ את ה-SEO פעם ביום ב-02:00 בלילה (זמן UTC)
     - cron: '0 2 * * *'
-  workflow_dispatch: # מאפשר לך להריץ ידנית מה-GitHub בלחיצת כפתור
+  workflow_dispatch: # כפתור הרצה ידנית ב-GitHub
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
+    
+    # הגדרת תיקיית העבודה לכל הצעדים ב-Job
+    defaults:
+      run:
+        working-directory: "./seo agent/python_engine"
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests supabase google-genai python-dotenv pytz
 
-      # 1. הרצת מנוע הסושיאל (רץ בכל הפעלה של ה-Cron)
+      # 1. הרצת מנוע הסושיאל (מפורסם לפייסבוק ואינסטגרם)
       - name: Run Social Engine
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python factory_ai_agents.py
 
-      # 2. הרצת מנוע ה-SEO (רק ב-02:00 בלילה או בהרצה ידנית)
+      # 2. הרצת מנוע ה-SEO (רק ב-02:00 UTC או בהרצה ידנית)
       - name: Run SEO Engine
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
         env:
