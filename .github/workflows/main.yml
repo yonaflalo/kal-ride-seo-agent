@@ -14,36 +14,42 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      - name: Find and Set Directory
+        id: set-dir
+        run: |
+          # מחפש איפה נמצא הקובץ factory_ai_agents.py בתוך כל ה-Repo
+          TARGET_DIR=$(find . -name "factory_ai_agents.py" -exec dirname {} \;)
+          echo "Found directory: $TARGET_DIR"
+          echo "target_path=$TARGET_DIR" >> $GITHUB_OUTPUT
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install Dependencies
-        # שימוש ב-shell כדי לטפל בנתיב עם רווחים בצורה בטוחה
+        working-directory: ${{ steps.set-dir.outputs.target_path }}
         run: |
-          cd "seo agent/python_engine"
           python -m pip install --upgrade pip
           pip install requests supabase google-genai python-dotenv pytz
 
       - name: Run Social Engine
+        working-directory: ${{ steps.set-dir.outputs.target_path }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }} # השתמשתי בשם שיש לך בתמונה!
+          # תיקון שם המפתח לפי התמונה שלך!
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           IG_USER_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
-        run: |
-          cd "seo agent/python_engine"
-          python factory_ai_agents.py
+        run: python factory_ai_agents.py
 
       - name: Run SEO Engine
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
+        working-directory: ${{ steps.set-dir.outputs.target_path }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }} # השתמשתי בשם שיש לך בתמונה!
-        run: |
-          cd "seo agent/python_engine"
-          python seo_factory.py
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python seo_factory.py
