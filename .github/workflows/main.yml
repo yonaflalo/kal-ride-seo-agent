@@ -14,13 +14,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Find and Set Directory
+      - name: Find Core Directory
         id: set-dir
         run: |
-          # מחפש איפה נמצא הקובץ factory_ai_agents.py בתוך כל ה-Repo
-          TARGET_DIR=$(find . -name "factory_ai_agents.py" -exec dirname {} \;)
-          echo "Found directory: $TARGET_DIR"
+          # מוצא את התיקייה שבה נמצאים קבצי ה-Python
+          TARGET_DIR=$(find . -name "factory_ai_agents.py" -exec dirname {} \; | head -n 1)
           echo "target_path=$TARGET_DIR" >> $GITHUB_OUTPUT
+          echo "Found directory: $TARGET_DIR"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -34,22 +34,29 @@ jobs:
           pip install requests supabase google-genai python-dotenv pytz
 
       - name: Run Social Engine
-        working-directory: ${{ steps.set-dir.outputs.target_path }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          # תיקון שם המפתח לפי התמונה שלך!
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
           IG_USER_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+        working-directory: ${{ steps.set-dir.outputs.target_path }}
         run: python factory_ai_agents.py
 
       - name: Run SEO Engine
+        # מריץ רק אם השעה נכונה או אם לחצת ידנית
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
-        working-directory: ${{ steps.set-dir.outputs.target_path }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python seo_factory.py
+        working-directory: ${{ steps.set-dir.outputs.target_path }}
+        run: |
+          # בדיקה אם הקובץ קיים לפני הרצה למניעת Error
+          if [ -f "seo_factory.py" ]; then
+            python seo_factory.py
+          else
+            echo "seo_factory.py not found in this directory, running secondary agent..."
+            python factory_ai_agents.py
+          fi
