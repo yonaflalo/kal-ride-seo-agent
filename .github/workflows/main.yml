@@ -20,28 +20,30 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        # התיקון: שימוש בגרשיים בודדות מסביב לנתיב עם רווחים
-        working-directory: 'seo agent/python_engine'
+        # שימוש ב-shell כדי לטפל בנתיב עם רווחים בצורה בטוחה
         run: |
+          cd "seo agent/python_engine"
           python -m pip install --upgrade pip
           pip install requests supabase google-genai python-dotenv pytz
 
       - name: Run Social Engine
-        working-directory: 'seo agent/python_engine'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }} # השתמשתי בשם שיש לך בתמונה!
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        run: python factory_ai_agents.py
+          FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+        run: |
+          cd "seo agent/python_engine"
+          python factory_ai_agents.py
 
       - name: Run SEO Engine
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
-        working-directory: 'seo agent/python_engine'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python seo_factory.py
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }} # השתמשתי בשם שיש לך בתמונה!
+        run: |
+          cd "seo agent/python_engine"
+          python seo_factory.py
